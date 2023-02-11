@@ -1,6 +1,8 @@
 ---
 title: "Robust Methods Lab"
-format: html
+format: 
+  html:
+    code-fold: true
 editor: visual
 execute: 
   message: false
@@ -20,7 +22,7 @@ execute:
 
     ```{r}
     #| message: false
-    #| 
+    #| warning: false
     library(tidyverse)
     library(robustbase) # star data
     library(boot) # bootstrapping
@@ -30,6 +32,7 @@ execute:
     library(data.table) # fread 
     library(infer) # sample_rep_n function
     library(palmerpenguins) # penguins dataset
+    library(performance)
 
 
     ```
@@ -46,9 +49,47 @@ Use the `stars` data in `robustbase`. This data looks at the relationship betwee
 
     a\. Plot the data and describe the pattern seen. What is Pearson's *r*?
 
-    b\. Re-run the correlation, but this time use the winsorized r (20%). Do this manually and then with the correlation::correlation function from `easystats`.
+    ```{r}
+    #| message: false
+    ggplot(stars, aes(x = log.Te, y = log.light)) +
+      geom_point() +
+      geom_smooth(method = "lm", se = FALSE) +
+      labs(x = "Temperature", y = "Light")
+
+    pear_r <- cor(stars$log.Te,stars$log.light)
+    ```
+
+    The Pearson correlation is r = `pear_r`
+
+2.  b\. Re-run the correlation, but this time use the winsorized r (20%). Do this manually and then with the correlation::correlation function from `easystats`.
+
+    ```{r}
+    stars_win <- stars %>%
+      mutate(win_light = datawizard::winsorize(data=log.light, threshold = 0.2),
+             win_temp = datawizard::winsorize(data=log.Te, threshold = 0.2))
+
+    win_r <- cor(stars_win$win_temp,stars_win$win_light)
+
+
+    win_r_cor <- correlation::correlation(data=stars, winsorize=0.2)
+    win_r_2 <- win_r_cor$r
+
+    ```
 
     c\. Compare the correlations.
+
+The winsorized r (20%) obtained manually is `r  win_r` which matches that obtained using the correlation::correlation function ().\
+By winsorizing the data, the correlation is now positive since the influential outliers have been removed.
+
+Below is a plot of the winsorized data:
+
+```{r}
+#| message: false
+ggplot(stars_win, aes(x = win_temp, y = win_light)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x = "Temperature", y = "Light")
+```
 
 ## Bootstrapping and Permutations
 
@@ -56,34 +97,197 @@ Use the `stars` data in `robustbase`. This data looks at the relationship betwee
 
     a\. Bootstrap the mean (using the `boot` package) and plot the histogram with `ggplot2`
 
+```{r}
+#| message: false
+mean_func <- function(vector,indices){
+  return(mean(vector[indices]))
+}
+data <- c(8.453532, 10.025041, 11.495339, 9.367600, 8.333229, 9.788753, 10.883344, 10.543059, 9.869095, 10.799819)
+results <- boot(data=data, statistic=mean_func, R=10000)
+samp_mean <- mean(data)
+
+df <- data.frame(results$t)
+
+ggplot(df, aes(x=results.t))+
+  geom_histogram(color="darkblue", fill="lightblue") +
+  geom_vline(xintercept = samp_mean, color = "red")+
+  ggtitle("Histogram of Means (Sample mean denoted in red)")+
+  labs(x = "Boostrapped Means", y = "Counts")
+
+```
+
     b\. Bootstrap the median (using the `boot` package) and plot the histogram with `ggplot2`
+
+```{r}
+#| message: false
+med_func <- function(vector,indices){
+  return(median(vector[indices]))
+}
+data <- c(8.453532, 10.025041, 11.495339, 9.367600, 8.333229, 9.788753, 10.883344, 10.543059, 9.869095, 10.799819)
+results_med <- boot(data=data, statistic=med_func, R=10000)
+sample_med <- median(data)
+
+df <- data.frame(results_med$t)
+
+ggplot(df, aes(x=results_med.t))+
+  geom_histogram(color="darkblue", fill="lightblue") +
+  geom_vline(xintercept = sample_med, color = "red")+
+  ggtitle("Histogram of Medians (Sample median denoted in red)")+
+  labs(x = "Boostrapped Medians", y = "Counts")
+```
 
     c\. For the mean bootstraps, plot the 95% confidence intervals (percentile and bca) ) along with the mean. Use `geom_vline annotate` to mark the lines noting what they represent.
 
+```{r}
+#| message: false
+
+mean_perc_ci <- boot.ci(results, type = "perc", R=10000, conf = 0.95)
+mean_bca_ci <- boot.ci(results, type = "bca", R=10000, conf = 0.95)
+
+perc_ci <- c(mean_perc_ci$percent[4], mean_perc_ci$percent[5])
+bca_ci <- c(mean_bca_ci$bca[4], mean_bca_ci$bca[5])
+
+df <- data.frame(results$t)
+
+ggplot(df, aes(x=results.t))+
+  geom_histogram(color="black", fill="lightblue") +
+  geom_vline(xintercept = sample_med, color = "darkgreen", size = 1.25)+
+  annotate("text", x=sample_med+0.02, y=770, label = "sample mean", angle = 90, size = 3, color = "darkgreen")+
+  geom_vline(xintercept = bca_ci[1], color = "red", size = 1.25, linetype = "dotted" )+
+  annotate("text", x=bca_ci[1]-0.04, y=770, label = "bca lower", angle = 90, size = 3, color = "red")+
+  geom_vline(xintercept = bca_ci[2], color = "red", size = 1.25)+
+  annotate("text", x=bca_ci[2]-0.03, y=770
+           , label = "bca upper", angle = 90, size = 3, color = "red")+
+  geom_vline(xintercept = perc_ci[1], color = "blue", size = 1.25, linetype = "dotted" )+
+  annotate("text", x=perc_ci[1]+0.02, y=770, label = "perc lower", angle = 90, size = 3, color = "blue")+
+  geom_vline(xintercept = perc_ci[2], color = "blue", size = 1.25)+
+  annotate("text", x=perc_ci[2]+0.02, y=770, label = "perc upper", angle = 90, size = 3, color = "blue")+
+  ggtitle("Histogram of Means")+
+  labs(x = "Boostrapped Means", y = "Counts")
+
+
+```
+
     d\. For the median bootstraps, plot the 95% confidence intervals (Percentile and BCa). Use `geom_vline and annotate` to mark the lines noting what they represent.
+
+```{r}
+#| message: false
+
+med_perc_ci <- boot.ci(results_med, type = "perc", R=10000, conf = 0.95)
+med_bca_ci <- boot.ci(results_med, type = "bca", R=10000, conf = 0.95)
+
+perc_ci <- c(med_perc_ci$percent[4], med_perc_ci$percent[5])
+bca_ci <- c(med_bca_ci$bca[4], med_bca_ci$bca[5])
+
+df <- data.frame(results_med$t)
+
+ggplot(df, aes(x=results_med.t))+
+  geom_histogram(color="black", fill="lightblue") +
+  geom_vline(xintercept = sample_med, color = "darkgreen", size = 1.25)+
+  annotate("text", x=sample_med+0.02, y=2000, label = "sample mean", angle = 90, size = 3, color = "darkgreen")+
+  geom_vline(xintercept = bca_ci[1], color = "red", size = 1.25, linetype = "dotted" )+
+  annotate("text", x=bca_ci[1]+0.02, y=2000, label = "bca lower", angle = 90, size = 3, color = "red")+
+  geom_vline(xintercept = bca_ci[2], color = "red", size = 1.25)+
+  annotate("text", x=bca_ci[2]+0.02, y=2000, label = "bca upper", angle = 90, size = 3, color = "red")+
+  geom_vline(xintercept = perc_ci[1], color = "blue", size = 1.25, linetype = "dotted" )+
+  annotate("text", x=perc_ci[1]+0.02, y=2000, label = "perc lower", angle = 90, size = 3, color = "blue")+
+  geom_vline(xintercept = perc_ci[2], color = "blue", size = 1.25)+
+  annotate("text", x=perc_ci[2]+0.02, y=2000, label = "perc upper", angle = 90, size = 3, color = "blue")+
+  ggtitle("Histogram of Medians")+
+  labs(x = "Boostrapped Medians", y = "Counts")
+```
 
 3.  You want to test whether the following paired samples are significantly different from one another: pre = \[22,25,17,24,16,29,20,23,19,20\], post = \[18,21,16,22,19,24,17,21,23,18\]. Often researchers would run a paired sampled t-test, but you are concerned the data does not follow a normal distribution.
 
     a.  Calculate the paired differences, that is post - pre, which will result in a vector of paired differences (pdiff0 = post - pre)
 
+```{r}
+pre <- c(22,25,17,24,16,29,20,23,19,20)
+post <- c(18,21,16,22,19,24,17,21,23,18)
+
+dif <- post - pre
+
+dif
+
+```
+
     b\. Calculate the mean of the paired differences (Xpdiff0)
+
+```{r}
+
+mean_dif <- mean(dif)
+
+mean_dif
+
+```
 
     d\. Bootstrap b) with replacement (pdiff1) and plot the histogram with `ggplot2`.
 
+```{r}
+#| message: false
+mean_func <- function(vector,indices){
+  return(mean(vector[indices]))
+}
+data <- dif
+set.seed(0)
+results <- boot(data=data, statistic=mean_func, R=10000)
+
+samp_mean <- mean(data)
+
+df <- data.frame(results$t)
+
+ggplot(df, aes(x=results.t))+
+  geom_histogram(color="darkblue", fill="lightblue") +
+  geom_vline(xintercept = samp_mean, color = "red")+
+  ggtitle("Histogram of Mean Paired Differences (Sample mean difference in red)")+
+  labs(x = "Boostrapped Means", y = "Counts")
+
+
+```
+
     e\. Calculate the 95% confidence intervals (BCa). What can you infer from this?
 
+```{r}
+#| message: false
+dif_bca_ci <- boot.ci(results, type = "bca", R=10000, conf = 0.95)
+bca_ci <- c(dif_bca_ci$bca[4], dif_bca_ci$bca[5])
+
+```
+
+The 95% confidence interval is `r bca_ci[1]` to `r bca_ci[2]`. Because this interval includes 0, we fail to reject the null hypothesis: there is no significant evidence that the paired samples are significantly different from one another.
+
     f\. Plot bootstrap mean along with 95% CIs (with `ggplot2`). Use annotate to note what the vertical lines represent.
+
+```{r}
+#| message: false
+df <- data.frame(results$t)
+
+ggplot(df, aes(x=results.t))+
+  geom_histogram(color="black", fill="lightblue") +
+  geom_vline(xintercept = samp_mean, color = "darkgreen", size = 1.25)+
+  annotate("text", x=samp_mean+0.05, y=700, label = "sample mean", angle = 90, size = 3, color = "darkgreen")+
+  geom_vline(xintercept = bca_ci[1], color = "red", size = 1.25, linetype = "dotted" )+
+  annotate("text", x=bca_ci[1]+0.05, y=700, label = "bca lower", angle = 90, size = 3, color = "red")+
+  geom_vline(xintercept = bca_ci[2], color = "red", size = 1.25)+
+  annotate("text", x=bca_ci[2]+0.05, y=700, label = "bca upper", angle = 90, size = 3, color = "red")+
+  ggtitle("Histogram of Mean Paired Differences")+
+  labs(x = "Boostrapped Mean Paired Difference", y = "Counts")
+```
 
 4.  Pepper Joe measured the length and heat of 85 chili peppers. He wants to know if smaller peppers are hotter than longer peppers.
 
     ```{r}
+    #| message: false
     #read data.table to read in
-    chili<- read.delim("/Users/jasongeller/Documents/03-Robust_Methods/data/chillis.csv")
+    chili<- read.delim("https://raw.githubusercontent.com/jgeller112/psy504-advanced-stats/main/slides/03-Robust_Methods/data/chillis.csv")
+
+
     ```
 
 5.  Some species display sexual size dimorphism -- in which one sex is on average larger than the other. Such a pattern can tell us about the species' ecology and mating habits. Do penguins display this sex difference in size? Let's just look at a subset of the palmerpenguins data set, which we'll call `my_penguins`.
 
     ```{r}
+    #| message: false
     my_penguins <- penguins %>% 
       filter(species == "Adelie",
              !is.na(sex), 
@@ -93,17 +297,78 @@ Use the `stars` data in `robustbase`. This data looks at the relationship betwee
 
 a\. Visualize body size by sex
 
+```{r}
+#| message: false
+ggplot(my_penguins, aes(x=bill_length_mm, color = sex, fill = sex))+
+  geom_histogram(data = my_penguins, alpha=0.5, position="identity")
+```
+
 b\. Calculate the original mean difference between sex
+
+```{r}
+#| message: false
+diff_df <- my_penguins %>% group_by(sex) %>% summarize(mean_bill_length = mean(bill_length_mm)) %>% ungroup()
+
+mean_dif <- diff_df[2,"mean_bill_length"] - diff_df[1, "mean_bill_length"]
+mean_dif <- mean_dif %>% as.numeric
+```
+
+The original mean difference (male - female) in bill length is `r mean_dif` mm.
 
 c\. Permute the group labels (10000x)
 
+```{r}
+#| message: false
+sample_size <- nrow(my_penguins) # length of dataset
+perm_reps   <- 10000 # number of permutations you want to do
+many.perm <- my_penguins    %>%
+  # this function is in the infer package. What it is doing is creating 
+  rep_sample_n(size = sample_size, replace = FALSE, reps = perm_reps) %>% 
+  mutate(perm_treatment = sample(sex, size = n(), replace = FALSE))  %>%
+  group_by(replicate, perm_treatment)
+
+head(many.perm)
+
+```
+
 d\. Plot the null-hypothesis distribution (NHD) for the difference
 
+```{r}
+#| message: false
+my_penguins_diff <- my_penguins %>%
+  specify(bill_length_mm~sex) %>%
+  calculate(stat = "diff in means", order = c("male", "female"))
+
+null_dist <- my_penguins %>%
+  specify(bill_length_mm~sex) %>%
+  hypothesize(null = "independence") %>%
+  generate(reps = 10000, type = "permute") %>%
+  calculate(stat = "diff in means", order = c("male", "female"))
+
+ggplot(null_dist, aes(x=stat))+
+  geom_histogram(color="black", fill="lightblue") +
+  geom_vline(xintercept = mean_dif, color = "red", size = 1.25)+
+  annotate("text", x=mean_dif-0.1, y=700, label = "observed mean diff", angle = 90, size = 3, color = "red")+
+  ggtitle("Null-Hypothesis Distribution for the Difference")+
+  labs(x = "Permuted Difference", y = "Counts")
+```
+
 e\. Compare the observed mean difference to the NHD (is *p* \< .05?)
+
+Looking at the histogram, the observed mean difference is highly unlikely to come from the null distribution.
+
+Calculating the p-value:
+
+```{r}
+#| message: false
+null_dist %>% get_p_value(obs_stat = my_penguins_diff, direction = "two-sided")
+```
 
 6.  Suppose a replication experiment was conducted to further examine the interaction effect between driving difficulty and conversation difficulty on driving errors in a driving simulator. In the replication, the researchers administered the same three levels of conversation difficulty; (1) control, (2) easy, (3) difficult (C, E, D) but assume that they added a third level of driving difficulty; (1) low, (2) moderate, (3) difficult (L, M, D). Assume the design was completely between subjects and conduct a factorial ANOVA to test the main effects of conversation and driving difficulty as well as the interaction effect. The DV is the number of errors committed in the driving simulator.
 
     ```{r}
+    #| message: false
+    #| warning: false
     library(tidyverse)
     fac_data<-read_csv("https://raw.githubusercontent.com/jgeller112/psy503-psych_stats/master/static/assignment/data/fact_final.csv")
 
@@ -112,7 +377,14 @@ e\. Compare the observed mean difference to the NHD (is *p* \< .05?)
 
     a\. Run a permutation test (ANOVA)
 
+    ```{r}
+    mod <- aovperm(formula= errors~convo*drive, data = fac_data, np=10000)
+    mod
+    ```
+
     b\. How would you follow-up significant effects in this context?
+
+Although the interaction effect is marginal (p = 0.07), you could possibly follow it up with a simple slop analysis. In addition you could conduct a simple effects analysis to look at differences between errors for conversation levels at a given level of driving difficulty (using the emmeans package).
 
 ## Robust Linear Models
 
@@ -128,10 +400,42 @@ df <- data.frame(hours=c(1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4,
 
 a\. Use the lm() function to fit a regression model in R that uses **hours** as the predictor variable and **score** as the response variable
 
+```{r}
+#| message: false
+library(broom)
+mod <- lm(formula = score~hours, data = df)
+tidy(mod)
+```
+
 b\. Interpret the results
+
+The linear model estimates the score to increase by 1.945 points for every 1 additional hour studied.
 
 c\. Check assumptions and report which ones failed (include plots)
 
+The linear model shows signs of heteroscedasticity (p = 0.006).
+
+```{r}
+check_model(mod)
+check_heteroscedasticity(mod)
+check_normality(mod)
+check_outliers(mod)
+```
+
 d\. Re-run the lm you saved above, but with robust standard errors
 
+```{r}
+#| message: false
+
+library(estimatr)
+
+m1 <- lm_robust(formula = score~hours, data = df, se_type = "HC3")
+
+tidy(m1)
+
+check_heteroscedasticity(m1)
+```
+
 e\. What differences do you notice between the regular regression and the regression with robust SEs applied?
+
+The beta coefficient estimate is less significant (p=0.2 compared to 0.08 before). The error variance now passes the heteroscedasticity check.
